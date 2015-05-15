@@ -23,6 +23,7 @@ extern UartDevice    UartDev;
 
 LOCAL void uart0_rx_intr_handler(void *para);
 
+rx_callback rx_cb;
 /******************************************************************************
  * FunctionName : uart_config
  * Description  : Internal used function
@@ -217,7 +218,7 @@ void print_uart_regs(void){
  * Parameters   : void *para - point to ETS_UART_INTR_ATTACH's arg
  * Returns      : NONE
 *******************************************************************************/
-
+int input_counter = 0;
 LOCAL void
 uart0_rx_intr_handler(void *para)
 {
@@ -230,23 +231,25 @@ uart0_rx_intr_handler(void *para)
 
     while (READ_PERI_REG(UART_STATUS(UART0)) & (UART_RXFIFO_CNT << UART_RXFIFO_CNT_S)) {
         RcvChar = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
-        uart0_sendStr("Char printed[");
-        uart_tx_one_char(UART0, RcvChar);    
-        uart0_sendStr("]\r\n");
-
+        
         /* you can add your handle code below.*/
 
         *(pRxBuff->pWritePos) = RcvChar;
-
+        input_counter++;
         // insert here for get one command line from uart
         if (RcvChar == '\r') {
             pRxBuff->BuffState = WRITE_OVER;
             WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
+            *(pRxBuff->pWritePos +1) = '\0';
+            pRxBuff->pWritePos++;
+            rx_cb(pRxBuff, input_counter);
+            input_counter=0;
         }
 
         pRxBuff->pWritePos++;
-
-        if (pRxBuff->pWritePos == (pRxBuff->pRcvMsgBuff + RX_BUFF_SIZE)) {
+        /*-1 for leaving room for a \0 at all times*/
+        if (pRxBuff->pWritePos == (pRxBuff->pRcvMsgBuff + RX_BUFF_SIZE -1)) {
+            *(pRxBuff->pWritePos +1) = '\0';
             // overflow ...we may need more error handle here.
             pRxBuff->pWritePos = pRxBuff->pRcvMsgBuff ;
         }
@@ -261,7 +264,7 @@ uart0_rx_intr_handler(void *para)
  * Returns      : NONE
 *******************************************************************************/
 void ICACHE_FLASH_ATTR
-uart_init(UartBautRate uart0_br, UartBautRate uart1_br)
+uart_init(UartBautRate uart0_br, UartBautRate uart1_br, rx_callback cb)
 {
   // rom use 74880 baut_rate, here reinitialize
   UartDev.baut_rate = uart0_br;
@@ -272,12 +275,13 @@ uart_init(UartBautRate uart0_br, UartBautRate uart1_br)
 
   // install uart1 putc callback
   os_install_putc1((void *)uart0_write_char);
+  rx_cb = cb;
 }
 
 void ICACHE_FLASH_ATTR
 uart_reattach()
 {
-	uart_init(BIT_RATE_74880, BIT_RATE_74880);
+//	uart_init(BIT_RATE_74880, BIT_RATE_74880);
 //  ETS_UART_INTR_ATTACH(uart_rx_intr_handler_ssc,  &(UartDev.rcv_buff));
 //  ETS_UART_INTR_ENABLE();
 }

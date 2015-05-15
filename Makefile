@@ -65,7 +65,7 @@ else
 # We are under other system, may be Linux. Assume using gcc.
 	# Can we use -fdata-sections?
 	ESPPORT ?= /dev/ttyUSB0
-	SDK_BASE	?= /esptools/esp-open-sdk/sdk
+	SDK_BASE	?= /opt/Espressif/sdk
 
 	CCFLAGS += -Os -ffunction-sections -fno-jump-tables
 	AR = xtensa-lx106-elf-ar
@@ -97,7 +97,7 @@ endif
 
 
 # which modules (subdirectories) of the project to include in compiling
-MODULES		= driver mqtt user modules
+MODULES		= driver json mqtt user modules 
 EXTRA_INCDIR    = include $(SDK_BASE)/../include
 
 # libraries used in this project, mainly provided by the SDK
