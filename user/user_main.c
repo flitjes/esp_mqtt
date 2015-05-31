@@ -41,6 +41,16 @@
 
 MQTT_Client mqttClient;
 
+#define CONNECTED 1
+#define DISCONNECTED 0
+
+struct {
+    int wifi;
+    int mqtt;
+} typedef status;
+
+status st;
+
 char* get_value(char * input, int start, int end){
     int size = end - start;
     char* value = (char*)os_malloc(sizeof(char) * (size + 1));
@@ -87,6 +97,10 @@ struct {
 
 publish pub;
 
+MQTT_Client* client;
+
+void setup_mqtt(esp_init_cfg* esp_cfg);
+
 int get_key_value(char* input, jsmntok_t tok[], int index, const char* key_value, keyvalue* kv){
     int start =tok[index].start;
     int end = tok[index].end;
@@ -112,19 +126,21 @@ int get_key_value(char* input, jsmntok_t tok[], int index, const char* key_value
 void wifiConnectCb(uint8_t status)
 {
 	if(status == STATION_GOT_IP){
-		MQTT_Connect(&mqttClient);
+        st.wifi = CONNECTED;
 	} else {
 		MQTT_Disconnect(&mqttClient);
+        st.wifi = DISCONNECTED;
 	}
 }
 void mqttConnectedCb(uint32_t *args)
 {
-	MQTT_Client* client = (MQTT_Client*)args;
+	client = (MQTT_Client*)args;
+    st.mqtt = CONNECTED;
 	INFO("MQTT: Connected\r\n");
 
-	MQTT_Subscribe(client, "/esp/relay/cmd", 0);
+//	MQTT_Subscribe(client, "/esp/relay/cmd", 0);
 
-	MQTT_Publish(client, "/esp/relay/status", "Status = 0", 6, 0, 0);
+//	MQTT_Publish(client, "/esp/relay/status", "Status = 0", 6, 0, 0);
 
 }
 
@@ -158,6 +174,19 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	os_free(dataBuf);
 }
 
+void setup_mqtt(esp_init_cfg* esp_cfg){
+
+	MQTT_InitConnection(&mqttClient, esp_cfg->host, atoi(esp_cfg->port), 0);
+	MQTT_InitClient(&mqttClient, sysCfg.device_id, sysCfg.mqtt_user, sysCfg.mqtt_pass, sysCfg.mqtt_keepalive, 1);
+
+	MQTT_InitLWT(&mqttClient, "/lwt", "offline", 0, 0);
+	MQTT_OnConnected(&mqttClient, mqttConnectedCb);
+	MQTT_OnDisconnected(&mqttClient, mqttDisconnectedCb);
+	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
+	MQTT_OnData(&mqttClient, mqttDataCb);
+}
+
+int sub_count = 0;
 void process_rx_input(RcvMsgBuff *buffer, int length){
     char* input = buffer->pRcvMsgBuff;
     jsmn_parser p;
@@ -237,16 +266,24 @@ void process_rx_input(RcvMsgBuff *buffer, int length){
     
     }
     
-    if(esp_init.host[0] != '\0')
+    if(esp_init.host[0] != '\0' && st.mqtt != CONNECTED){
         os_printf("Initialising %s, %s, %s, %s, %s, %s\n", esp_init.host, esp_init.port, esp_init.clientid, esp_init.user, esp_init.password, esp_init.interval);
-    
-    if(sub.host[0] != '\0')
-        os_printf("Subscribe to %s, %s\n", sub.host, sub.topic);
-    
-    if(pub.host[0] != '\0')
-        os_printf("Publish to %s, %s, %s\n", pub.host, pub.topic, pub.message);
+        setup_mqtt(&esp_init);
+		MQTT_Connect(&mqttClient);
+    }
 
-    if(wifi.bssid[0] != '\0'){
+    if(sub.host[0] != '\0'){
+        os_printf("Subscribe to %s, %s\n", sub.host, sub.topic);
+	    MQTT_Subscribe(client, sub.topic, sub_count);
+        sub_count++;
+    }
+    
+    if(pub.host[0] != '\0'){
+        os_printf("Publish to %s, %s, %s\n", pub.host, pub.topic, pub.message);
+        MQTT_Publish(client, pub.topic, pub.message, strlen(pub.message), 0, 0);
+    }
+
+    if(wifi.bssid[0] != '\0' && st.wifi != CONNECTED){
         os_printf("Wifi: %s, %s\n", wifi.bssid, wifi.psk);
 	    WIFI_Connect(wifi.bssid, wifi.psk, wifiConnectCb);
     }
@@ -274,21 +311,13 @@ void user_init(void)
     wifi.bssid[0] = '\0';
     wifi.psk[0] = '\0';
 
+    st.wifi = DISCONNECTED;
+    st.mqtt = DISCONNECTED;
+
     uart_init(BIT_RATE_115200, BIT_RATE_115200, &process_rx_input);
 	os_delay_us(1000000);
 
 	CFG_Load();
-	
-	MQTT_InitConnection(&mqttClient, "192.168.178.30", 1883, 0);
-
-	MQTT_InitClient(&mqttClient, sysCfg.device_id, sysCfg.mqtt_user, sysCfg.mqtt_pass, sysCfg.mqtt_keepalive, 1);
-
-	MQTT_InitLWT(&mqttClient, "/lwt", "offline", 0, 0);
-	MQTT_OnConnected(&mqttClient, mqttConnectedCb);
-	MQTT_OnDisconnected(&mqttClient, mqttDisconnectedCb);
-	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
-	MQTT_OnData(&mqttClient, mqttDataCb);
-
 
 	INFO("\r\nSystem started ...\r\n");
 }
