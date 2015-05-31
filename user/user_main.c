@@ -138,10 +138,6 @@ void mqttConnectedCb(uint32_t *args)
     st.mqtt = CONNECTED;
 	INFO("MQTT: Connected\r\n");
 
-//	MQTT_Subscribe(client, "/esp/relay/cmd", 0);
-
-//	MQTT_Publish(client, "/esp/relay/status", "Status = 0", 6, 0, 0);
-
 }
 
 void mqttDisconnectedCb(uint32_t *args)
@@ -169,7 +165,7 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	os_memcpy(dataBuf, data, data_len);
 	dataBuf[data_len] = 0;
 
-	INFO("Receive topic: %s, data:\n %s \n", topicBuf, dataBuf);
+	INFO("Receive topic: %s, data:\n%s\n", topicBuf, dataBuf);
 	os_free(topicBuf);
 	os_free(dataBuf);
 }
@@ -276,11 +272,15 @@ void process_rx_input(RcvMsgBuff *buffer, int length){
         os_printf("Subscribe to %s, %s\n", sub.host, sub.topic);
 	    MQTT_Subscribe(client, sub.topic, sub_count);
         sub_count++;
+        //Ugly but it works for now
+        sub.host[0] = '\0';
     }
     
     if(pub.host[0] != '\0'){
         os_printf("Publish to %s, %s, %s\n", pub.host, pub.topic, pub.message);
         MQTT_Publish(client, pub.topic, pub.message, strlen(pub.message), 0, 0);
+        //Ugly but it works for now
+        pub.host[0] = '\0';
     }
 
     if(wifi.bssid[0] != '\0' && st.wifi != CONNECTED){
