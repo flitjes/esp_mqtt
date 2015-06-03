@@ -12,10 +12,8 @@
 #include "ets_sys.h"
 #include "osapi.h"
 #include "driver/uart.h"
-#include "osapi.h"
 #include "driver/uart_register.h"
 //#include "ssc.h"
-
 
 // UartDev is defined and initialized in rom code.
 extern UartDevice    UartDev;
@@ -23,7 +21,6 @@ extern UartDevice    UartDev;
 
 LOCAL void uart0_rx_intr_handler(void *para);
 
-rx_callback rx_cb;
 /******************************************************************************
  * FunctionName : uart_config
  * Description  : Internal used function
@@ -45,7 +42,7 @@ uart_config(uint8 uart_no)
     ETS_UART_INTR_ATTACH(uart0_rx_intr_handler,  &(UartDev.rcv_buff));
     PIN_PULLUP_DIS(PERIPHS_IO_MUX_U0TXD_U);
     PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0TXD_U, FUNC_U0TXD);
-    PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U, FUNC_U0RTS);
+//    PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDO_U, FUNC_U0RTS);
   }
 
   uart_div_modify(uart_no, UART_CLK_FREQ / (UartDev.baut_rate));
@@ -68,13 +65,9 @@ uart_config(uint8 uart_no)
   {
     //set rx fifo trigger
     WRITE_PERI_REG(UART_CONF1(uart_no),
-                   ((0x10 & UART_RXFIFO_FULL_THRHD) << UART_RXFIFO_FULL_THRHD_S) |
-                   ((0x10 & UART_RX_FLOW_THRHD) << UART_RX_FLOW_THRHD_S) |
-                   UART_RX_FLOW_EN |
-                   (0x02 & UART_RX_TOUT_THRHD) << UART_RX_TOUT_THRHD_S |
-                   UART_RX_TOUT_EN);
-    SET_PERI_REG_MASK(UART_INT_ENA(uart_no), UART_RXFIFO_TOUT_INT_ENA |
-                      UART_FRM_ERR_INT_ENA);
+                   ((0x01 & UART_RXFIFO_FULL_THRHD) << UART_RXFIFO_FULL_THRHD_S) |
+                   ((0x01 & UART_RX_FLOW_THRHD) << UART_RX_FLOW_THRHD_S) |
+                   UART_RX_FLOW_EN);
   }
   else
   {
@@ -117,8 +110,7 @@ uart_tx_one_char(uint8 uart, uint8 TxChar)
  * Parameters   : char c - character to tx
  * Returns      : NONE
 *******************************************************************************/
-void ICACHE_FLASH_ATTR
-uart1_write_char(char c)
+void ICACHE_FLASH_ATTR uart1_write_char(char c)
 {
   if (c == '\n')
   {
@@ -134,8 +126,7 @@ uart1_write_char(char c)
   }
 }
 
-void ICACHE_FLASH_ATTR
-uart0_write_char(char c)
+void ICACHE_FLASH_ATTR uart0_write_char(char c)
 {
   if (c == '\n')
   {
@@ -184,76 +175,65 @@ uart0_sendStr(const char *str)
 	}
 }
 
-/* 
- * Used for debugging the uart
- * Prefroms a register dump of:
- * Interrupt Enable, Interrupt Status, Interupt Clear and Fifo buffer
-*/
-void print_uart_regs(void){
-    int i = 0;
-    uart0_sendStr("\r\nEnable:");
-    for(i = 31; i >=  0; i--)
-       uart0_write_char(((READ_PERI_REG(UART_INT_ENA(UART0)) & (BIT(i))) >> i)+ 0x30 );
-
-    uart0_sendStr("\r\nStatus:");
-    for(i = 31; i >=  0; i--)
-       uart0_write_char(((READ_PERI_REG(UART_INT_ST(UART0)) & (BIT(i))) >> i)+ 0x30 );
-    
-    uart0_sendStr("\n\rCLR:");
-    for(i = 31; i >=  0; i--)
-       uart0_write_char(((READ_PERI_REG(UART_INT_CLR(UART0)) & (BIT(i))) >> i) + 0x30 );
-    
-    uart0_sendStr("\n\rFIFO:");
-    for(i = 31; i >=  0; i--)
-       uart0_write_char(((READ_PERI_REG(UART_FIFO(UART0)) & (BIT(i))) >> i)+ 0x30 );
-}
-
-
 /******************************************************************************
  * FunctionName : uart0_rx_intr_handler
  * Description  : Internal used function
  *                UART0 interrupt handler, add self handle code inside
- *                The FIFO time out interrupt is used to cycle through the buffer
- *                when a \r is found it will disable the interrupt
  * Parameters   : void *para - point to ETS_UART_INTR_ATTACH's arg
  * Returns      : NONE
 *******************************************************************************/
-int input_counter = 0;
+extern void at_recvTask(void);
+
 LOCAL void
 uart0_rx_intr_handler(void *para)
 {
-    /* uart0 and uart1 intr combine togther, when interrupt occur, see reg 0x3ff20020, bit2, bit0 represents
-     * uart1 and uart0 respectively
-     */
-    RcvMsgBuff *pRxBuff = (RcvMsgBuff *)para;
-    uint8 RcvChar;
-    int i;
+  /* uart0 and uart1 intr combine togther, when interrupt occur, see reg 0x3ff20020, bit2, bit0 represents
+    * uart1 and uart0 respectively
+    */
+//  RcvMsgBuff *pRxBuff = (RcvMsgBuff *)para;
+//  uint8 RcvChar;
+  uint8 uart_no = UART0;//UartDev.buff_uart_no;
 
-    while (READ_PERI_REG(UART_STATUS(UART0)) & (UART_RXFIFO_CNT << UART_RXFIFO_CNT_S)) {
-        RcvChar = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
-        
-        /* you can add your handle code below.*/
+//  if (UART_RXFIFO_FULL_INT_ST != (READ_PERI_REG(UART_INT_ST(uart_no)) & UART_RXFIFO_FULL_INT_ST))
+//  {
+//    return;
+//  }
+  if (UART_RXFIFO_FULL_INT_ST == (READ_PERI_REG(UART_INT_ST(uart_no)) & UART_RXFIFO_FULL_INT_ST))
+  {
+    // Receive character here
+    uint8_t c = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
+    
+    // system_os_post(priority, sig, character);
+    system_os_post(0, SIG_UART0_RX, c);
+    
+    // Clear the interupt
+    WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_RXFIFO_FULL_INT_CLR);
+  }
 
-        *(pRxBuff->pWritePos) = RcvChar;
-        input_counter++;
-        // insert here for get one command line from uart
-        if (RcvChar == '\r') {
-            pRxBuff->BuffState = WRITE_OVER;
-            WRITE_PERI_REG(UART_INT_CLR(UART0), UART_RXFIFO_TOUT_INT_CLR);
-            *(pRxBuff->pWritePos +1) = '\0';
-            pRxBuff->pWritePos++;
-            rx_cb(pRxBuff, input_counter);
-            input_counter=0;
-        }
+//  WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_RXFIFO_FULL_INT_CLR);
 
-        pRxBuff->pWritePos++;
-        /*-1 for leaving room for a \0 at all times*/
-        if (pRxBuff->pWritePos == (pRxBuff->pRcvMsgBuff + RX_BUFF_SIZE -1)) {
-            *(pRxBuff->pWritePos +1) = '\0';
-            // overflow ...we may need more error handle here.
-            pRxBuff->pWritePos = pRxBuff->pRcvMsgBuff ;
-        }
-    }
+//  if (READ_PERI_REG(UART_STATUS(uart_no)) & (UART_RXFIFO_CNT << UART_RXFIFO_CNT_S))
+//  {
+//    RcvChar = READ_PERI_REG(UART_FIFO(uart_no)) & 0xFF;
+//    at_recvTask();
+//    *(pRxBuff->pWritePos) = RcvChar;
+
+//    system_os_post(at_recvTaskPrio, NULL, RcvChar);
+
+//    //insert here for get one command line from uart
+//    if (RcvChar == '\r')
+//    {
+//      pRxBuff->BuffState = WRITE_OVER;
+//    }
+//
+//    pRxBuff->pWritePos++;
+//
+//    if (pRxBuff->pWritePos == (pRxBuff->pRcvMsgBuff + RX_BUFF_SIZE))
+//    {
+//      // overflow ...we may need more error handle here.
+//      pRxBuff->pWritePos = pRxBuff->pRcvMsgBuff ;
+//    }
+//  }
 }
 
 /******************************************************************************
@@ -264,7 +244,7 @@ uart0_rx_intr_handler(void *para)
  * Returns      : NONE
 *******************************************************************************/
 void ICACHE_FLASH_ATTR
-uart_init(UartBautRate uart0_br, UartBautRate uart1_br, rx_callback cb)
+uart_init(UartBautRate uart0_br, UartBautRate uart1_br)
 {
   // rom use 74880 baut_rate, here reinitialize
   UartDev.baut_rate = uart0_br;
@@ -273,15 +253,12 @@ uart_init(UartBautRate uart0_br, UartBautRate uart1_br, rx_callback cb)
   uart_config(UART1);
   ETS_UART_INTR_ENABLE();
 
-  // install uart1 putc callback
-  os_install_putc1((void *)uart0_write_char);
-  rx_cb = cb;
 }
 
-void ICACHE_FLASH_ATTR
-uart_reattach()
+void ICACHE_FLASH_ATTR uart_reattach()
 {
-//	uart_init(BIT_RATE_74880, BIT_RATE_74880);
+	uart_init(BIT_RATE_74880, BIT_RATE_74880);
 //  ETS_UART_INTR_ATTACH(uart_rx_intr_handler_ssc,  &(UartDev.rcv_buff));
 //  ETS_UART_INTR_ENABLE();
 }
+

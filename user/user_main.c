@@ -44,6 +44,8 @@ MQTT_Client mqttClient;
 #define CONNECTED 1
 #define DISCONNECTED 0
 
+#define SIG_UART0_RX 0x7f
+
 struct {
     int wifi;
     int mqtt;
@@ -182,9 +184,38 @@ void setup_mqtt(esp_init_cfg* esp_cfg){
 	MQTT_OnData(&mqttClient, mqttDataCb);
 }
 
+void process_rx_input(char *input, int length);
 int sub_count = 0;
-void process_rx_input(RcvMsgBuff *buffer, int length){
-    char* input = buffer->pRcvMsgBuff;
+char rxbuffer[256];
+int buf_index = 0;
+os_event_t uart_recv_queue[32];
+void uart_recv_task(os_event_t * event)
+{
+	switch(event->sig)
+	{
+		case SIG_UART0_RX:
+		{
+			os_memcpy(&rxbuffer[buf_index], &event->par,1);
+			os_printf("%c", rxbuffer[buf_index]);
+			rxbuffer[buf_index + 1] = '\0';
+			if(rxbuffer[buf_index] == '*'){
+				process_rx_input(rxbuffer, buf_index);			
+				buf_index = 0;
+			}
+			else {
+				if(buf_index + 1 < 254)
+					buf_index++;
+				else
+					buf_index = 0;
+			}
+			
+			break;
+		}
+		default:
+		break;
+	}
+}
+void process_rx_input(char *input, int length){
     jsmn_parser p;
     jsmntok_t tok[50];
     const char* js;
@@ -198,8 +229,8 @@ void process_rx_input(RcvMsgBuff *buffer, int length){
     js = input;
     jsmn_init(&p);
     count = jsmn_parse(&p, js, strlen(js), tok, 50);
-    //os_printf("Count: %d\r\n", count); 
-    if(count > 0){
+    os_printf("Count: %d\r\n", count); 
+    if(count > 1){
         keyvalue first;
         for(i=0; i < count; i++){
             unsigned int start =tok[i].start;
@@ -288,9 +319,6 @@ void process_rx_input(RcvMsgBuff *buffer, int length){
 	    WIFI_Connect(wifi.bssid, wifi.psk, wifiConnectCb);
     }
 
-
-   //After reading reset the pointer to the beginning of the buffer
-    buffer->pWritePos = buffer->pRcvMsgBuff - 1;
 }
 void user_init(void)
 {
@@ -314,10 +342,12 @@ void user_init(void)
     st.wifi = DISCONNECTED;
     st.mqtt = DISCONNECTED;
 
-    uart_init(BIT_RATE_115200, BIT_RATE_115200, &process_rx_input);
+    uart_init(BIT_RATE_115200, BIT_RATE_115200);
 	os_delay_us(1000000);
 
 	CFG_Load();
 
 	INFO("\r\nSystem started ...\r\n");
+	// install receive task
+	system_os_task(uart_recv_task, 0, uart_recv_queue, 32);
 }

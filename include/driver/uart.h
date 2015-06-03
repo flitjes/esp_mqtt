@@ -10,6 +10,8 @@
 #define UART0   0
 #define UART1   1
 
+#define SIG_UART0_RX 0x7f
+
 typedef enum {
     FIVE_BITS = 0x0,
     SIX_BITS = 0x1,
@@ -42,7 +44,6 @@ typedef enum {
     BIT_RATE_74880   = 74880,
     BIT_RATE_115200 = 115200,
     BIT_RATE_230400 = 230400,
-    BIT_RATE_256000 = 256000,
     BIT_RATE_460800 = 460800,
     BIT_RATE_921600 = 921600
 } UartBautRate;
@@ -95,9 +96,12 @@ typedef struct {
     int                      buff_uart_no;  //indicate which uart use tx/rx buffer
 } UartDevice;
 
-typedef void (*rx_callback) (RcvMsgBuff*, int);
-
-void uart_init(UartBautRate uart0_br, UartBautRate uart1_br, rx_callback cb);
+void uart_init(UartBautRate uart0_br, UartBautRate uart1_br);
 void uart0_sendStr(const char *str);
+
+void uart0_write_char(char c);
+void uart1_write_char(char c);
+
 #endif
+
 
