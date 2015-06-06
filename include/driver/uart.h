@@ -11,6 +11,7 @@
 #define UART1   1
 
 #define SIG_UART0_RX 0x7f
+#define UART_TASK_PRIO 0
 
 typedef enum {
     FIVE_BITS = 0x0,

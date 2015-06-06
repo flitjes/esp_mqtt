@@ -296,7 +296,8 @@ void process_rx_input(char *input, int length){
     if(esp_init.host[0] != '\0' && st.mqtt != CONNECTED){
         os_printf("Initialising %s, %s, %s, %s, %s, %s\n", esp_init.host, esp_init.port, esp_init.clientid, esp_init.user, esp_init.password, esp_init.interval);
         setup_mqtt(&esp_init);
-		MQTT_Connect(&mqttClient);
+	MQTT_Connect(&mqttClient);
+	os_printf("Inited\n");
     }
 
     if(sub.host[0] != '\0'){
@@ -349,5 +350,5 @@ void user_init(void)
 
 	INFO("\r\nSystem started ...\r\n");
 	// install receive task
-	system_os_task(uart_recv_task, 0, uart_recv_queue, 32);
+	system_os_task(uart_recv_task, UART_TASK_PRIO, uart_recv_queue, 32);
 }

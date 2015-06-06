@@ -183,7 +183,6 @@ uart0_sendStr(const char *str)
  * Returns      : NONE
 *******************************************************************************/
 extern void at_recvTask(void);
-
 LOCAL void
 uart0_rx_intr_handler(void *para)
 {
@@ -204,7 +203,7 @@ uart0_rx_intr_handler(void *para)
     uint8_t c = READ_PERI_REG(UART_FIFO(UART0)) & 0xFF;
     
     // system_os_post(priority, sig, character);
-    system_os_post(0, SIG_UART0_RX, c);
+    system_os_post(UART_TASK_PRIO, SIG_UART0_RX, c);
     
     // Clear the interupt
     WRITE_PERI_REG(UART_INT_CLR(uart_no), UART_RXFIFO_FULL_INT_CLR);
