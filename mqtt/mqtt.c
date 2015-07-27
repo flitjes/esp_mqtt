@@ -47,7 +47,6 @@
 #ifndef QUEUE_BUFFER_SIZE
 #define QUEUE_BUFFER_SIZE		 	2048
 #endif
-
 unsigned char *default_certificate;
 unsigned int default_certificate_len = 0;
 unsigned char *default_private_key;
@@ -128,7 +127,7 @@ mqtt_tcpclient_recv(void *arg, char *pdata, unsigned short len)
 	MQTT_Client *client = (MQTT_Client *)pCon->reverse;
 
 READPACKET:
-	INFO("TCP: data received %d bytes\r\n", len);
+//	INFO("TCP: data received %d bytes\r\n", len);
 	if(len < MQTT_BUF_SIZE && len > 0){
 		os_memcpy(client->mqtt_state.in_buffer, pdata, len);
 
@@ -139,7 +138,7 @@ READPACKET:
 		case MQTT_CONNECT_SENDING:
 			if(msg_type == MQTT_MSG_TYPE_CONNACK){
 				if(client->mqtt_state.pending_msg_type != MQTT_MSG_TYPE_CONNECT){
-					INFO("MQTT: Invalid packet\r\n");
+//					INFO("MQTT: Invalid packet\r\n");
 					if(client->security){
 						espconn_secure_disconnect(client->pCon);
 					}
@@ -255,7 +254,7 @@ mqtt_tcpclient_sent_cb(void *arg)
 {
 	struct espconn *pCon = (struct espconn *)arg;
 	MQTT_Client* client = (MQTT_Client *)pCon->reverse;
-	INFO("TCP: Sent\r\n");
+	//INFO("TCP: Sent\r\n");
 	client->sendTimeout = 0;
 	if(client->connState == MQTT_DATA && client->mqtt_state.pending_msg_type == MQTT_MSG_TYPE_PUBLISH){
 		if(client->publishedCb)
@@ -272,7 +271,7 @@ void ICACHE_FLASH_ATTR mqtt_timer(void *arg)
 		client->keepAliveTick ++;
 		if(client->keepAliveTick > client->mqtt_state.connect_info->keepalive){
 
-			INFO("\r\nMQTT: Send keepalive packet to %s:%d!\r\n", client->host, client->port);
+		//	INFO("\r\nMQTT: Send keepalive packet to %s:%d!\r\n", client->host, client->port);
 			client->mqtt_state.outbound_message = mqtt_msg_pingreq(&client->mqtt_state.mqtt_connection);
 			client->mqtt_state.pending_msg_type = MQTT_MSG_TYPE_PINGREQ;
 			client->mqtt_state.pending_msg_type = mqtt_get_type(client->mqtt_state.outbound_message->data);
@@ -280,7 +279,7 @@ void ICACHE_FLASH_ATTR mqtt_timer(void *arg)
 
 
 			client->sendTimeout = MQTT_SEND_TIMOUT;
-			INFO("MQTT: Sending, type: %d, id: %04X\r\n",client->mqtt_state.pending_msg_type, client->mqtt_state.pending_msg_id);
+		//	INFO("MQTT: Sending, type: %d, id: %04X\r\n",client->mqtt_state.pending_msg_type, client->mqtt_state.pending_msg_id);
 			if(client->security){
 				espconn_secure_sent(client->pCon, client->mqtt_state.outbound_message->data, client->mqtt_state.outbound_message->length);
 			}

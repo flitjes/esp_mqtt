@@ -167,7 +167,7 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	os_memcpy(dataBuf, data, data_len);
 	dataBuf[data_len] = 0;
 
-	INFO("Receive topic: %s, data:\n%s\n", topicBuf, dataBuf);
+	INFO("Receive topic: %s, data:%s", topicBuf, dataBuf);
 	os_free(topicBuf);
 	os_free(dataBuf);
 }
@@ -196,7 +196,7 @@ void uart_recv_task(os_event_t * event)
 		case SIG_UART0_RX:
 		{
 			os_memcpy(&rxbuffer[buf_index], &event->par,1);
-			os_printf("%c", rxbuffer[buf_index]);
+			//os_printf("%c", rxbuffer[buf_index]);
 			rxbuffer[buf_index + 1] = '\0';
 			if(rxbuffer[buf_index] == '*'){
 				process_rx_input(rxbuffer, buf_index);			
@@ -223,13 +223,13 @@ void process_rx_input(char *input, int length){
     int count;
     keyvalue kv;
     
-    INFO(input);
-    INFO("\r\n");
+   // INFO(input);
+   // INFO("\r\n");
     
     js = input;
     jsmn_init(&p);
     count = jsmn_parse(&p, js, strlen(js), tok, 50);
-    os_printf("Count: %d\r\n", count); 
+//    os_printf("Count: %d\r\n", count); 
     if(count > 1){
         keyvalue first;
         for(i=0; i < count; i++){
