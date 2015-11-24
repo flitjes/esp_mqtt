@@ -197,7 +197,7 @@ firmware:
 	$(Q) mkdir -p $@
 
 flash: $(FW_FILE_1)  $(FW_FILE_2)
-	$(ESPTOOL) -p $(ESPPORT) write_flash $(FW_1) $(FW_FILE_1) $(FW_2) $(FW_FILE_2)
+	$(ESPTOOL) -p $(ESPPORT) write_flash -fm dio  $(FW_1) $(FW_FILE_1) $(FW_2) $(FW_FILE_2)
 
 test: flash
 	screen $(ESPPORT) 115200
