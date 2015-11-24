@@ -37,8 +37,14 @@
 #include "gpio.h"
 #include "user_interface.h"
 #include "mem.h"
+#include "ws2812.h"
 
 MQTT_Client mqttClient;
+#define LEDS 1
+char buffer1[LEDS*3] = { 0x00, 0x00, 0xFF }; 
+char buffer2[LEDS*3] = { 0xFF, 0x00, 0x00 };
+
+uint8_t toggle = 0;
 
 void wifiConnectCb(uint8_t status)
 {
@@ -88,6 +94,15 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	dataBuf[data_len] = 0;
 
 	INFO("Receive topic: %s, data: %s \r\n", topicBuf, dataBuf);
+	if(toggle == 0){
+		os_printf("White\r\n");
+		WS2812OutBuffer(buffer1, sizeof(buffer1), 1);
+		toggle = 1;
+	} else if(toggle == 1){
+		os_printf("Red\r\n");
+		WS2812OutBuffer(buffer2, sizeof(buffer2), 1);
+		toggle = 0;
+	}
 	os_free(topicBuf);
 	os_free(dataBuf);
 }
@@ -112,7 +127,7 @@ void user_init(void)
 	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
 	MQTT_OnData(&mqttClient, mqttDataCb);
 
-	WIFI_Connect(sysCfg.sta_ssid, sysCfg.sta_pwd, wifiConnectCb);
+//	WIFI_Connect(sysCfg.sta_ssid, sysCfg.sta_pwd, wifiConnectCb);
 
 	INFO("\r\nSystem started ...\r\n");
 }
