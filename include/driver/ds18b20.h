@@ -5,6 +5,9 @@
 #include "osapi.h"
 #include "gpio.h"
 
+#define PERIPHS_IO_MUX_PULLDWN          BIT6
+#define PIN_PULLDWN_DIS(PIN_NAME)             CLEAR_PERI_REG_MASK(PIN_NAME, PERIPHS_IO_MUX_PULLDWN)
+
 #define DS18B20_MUX		PERIPHS_IO_MUX_GPIO2_U
 #define DS18B20_FUNC	FUNC_GPIO2
 #define DS18B20_PIN		2
