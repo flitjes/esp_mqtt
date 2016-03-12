@@ -1,33 +1,24 @@
-/* main.c -- MQTT client example
-*
-* Copyright (c) 2014-2015, Tuan PM <tuanpm at live dot com>
-* All rights reserved.
-*
-* Redistribution and use in source and binary forms, with or without
-* modification, are permitted provided that the following conditions are met:
-*
-* * Redistributions of source code must retain the above copyright notice,
-* this list of conditions and the following disclaimer.
-* * Redistributions in binary form must reproduce the above copyright
-* notice, this list of conditions and the following disclaimer in the
-* documentation and/or other materials provided with the distribution.
-* * Neither the name of Redis nor the names of its contributors may be used
-* to endorse or promote products derived from this software without
-* specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-* ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-* LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-* CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-* SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-* INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-* CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-* ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-* POSSIBILITY OF SUCH DAMAGE.
+/*
+	Read DS18B20 and broadcast the result via UDP
+
+	This includes a very very stupid configuration routine if the wifi doesn't connect.
+	Stupid, but currently effective.
+
+	FYI I like the baud rate 74880 (bootloader rate, so i don't get garbage), change it as you wish
+
+	Consider this thing pre-alpha in its current form
+
 */
-#include "jsmn.h"
+
+#include <ets_sys.h>
+#include <osapi.h>
+#include <os_type.h>
+#include <gpio.h>
+#include <mem.h>
+#include "driver/uart.h"
+#include "user_interface.h"
+#include "espconn.h"
+#include "driver/ds18b20.h"
 #include "ets_sys.h"
 #include "driver/uart.h"
 #include "osapi.h"
@@ -39,316 +30,174 @@
 #include "user_interface.h"
 #include "mem.h"
 
-MQTT_Client mqttClient;
+#define SLEEP_TIME 120 * 1000 /* milliseconds */
+#define MAX_DEVICES 20
 
-#define CONNECTED 1
-#define DISCONNECTED 0
+#define sleepms(x) os_delay_us(x*1000);
+//#define DSDEBUG 1
 
-#define SIG_UART0_RX 0x7f
+uint8_t devices[MAX_DEVICES][8];
+int ndevices = 0;
+int curdevice = 0;
+char *rline = NULL;
+int rstate = 0;
+char ap[50];
+char pass[50];
 
-struct {
-    int wifi;
-    int mqtt;
-} typedef status;
+static os_timer_t ds18b20_timer;
 
-status st;
 
-char* get_value(char * input, int start, int end){
-    int size = end - start;
-    char* value = (char*)os_malloc(sizeof(char) * (size + 1));
-    memcpy(value, &input[start], (end - start));
-    value[size] = '\0';
-//    os_printf("%s\r\n", value);
-    return value;
-}
-struct {
-    char host[17];
-    char port[8];
-    char clientid[50];
-    char user[20];
-    char password[50];
-    char interval[8];
-} typedef esp_init_cfg;
+static struct espconn bcconn;
 
-esp_init_cfg esp_init;
 
-struct {
-    char bssid[50];
-    char psk[50];
-} typedef wifi_cfg;
+void ICACHE_FLASH_ATTR ds18b20p2(void *arg);
 
-wifi_cfg wifi;
-
-struct {
-char* key;
-char* value;
-} typedef keyvalue;
-
-struct {
-    char host[17];
-    char topic[255];
-} typedef subscribe;
-
-subscribe sub;
-
-struct {
-    char host[17];
-    char topic[255];
-    char message[255];
-} typedef publish;
-
-publish pub;
-
-MQTT_Client* client;
-
-void setup_mqtt(esp_init_cfg* esp_cfg);
-
-int get_key_value(char* input, jsmntok_t tok[], int index, const char* key_value, keyvalue* kv){
-    int start =tok[index].start;
-    int end = tok[index].end;
-    int size = end - start;
-    char* key = get_value(input, start, end);
-    int retval = 1;
-    
-    if(!strcmp(key, key_value)){ 
-        char* value = get_value(input, tok[index+1].start, tok[index+1].end);
-    //    os_printf("%s = %s\r\n", key, value);
-
-        kv-> key = (char*) os_malloc (strlen(key) + 1);
-        strcpy(kv->key, key);
-        kv-> value = (char*) os_malloc (strlen(value) + 1);
-        strcpy(kv->value, value);
-        retval = 0;
-        os_free(value);
-     }
-     os_free(key);
-    return retval;
-}
-
-void wifiConnectCb(uint8_t status)
+void ICACHE_FLASH_ATTR sleeper(void *arg)
 {
-	if(status == STATION_GOT_IP){
-        st.wifi = CONNECTED;
-	} else {
-		MQTT_Disconnect(&mqttClient);
-        st.wifi = DISCONNECTED;
-	}
+	INFO("deep_sleep\n");
+	system_deep_sleep((SLEEP_TIME-1000)*1000);
 }
-void mqttConnectedCb(uint32_t *args)
+
+
+//  ds18b20 part 1
+//  initiate a conversion
+void ICACHE_FLASH_ATTR ds18b20p1(void *arg)
 {
-	client = (MQTT_Client*)args;
-    st.mqtt = CONNECTED;
-	INFO("MQTT: Connected\r\n");
+	os_timer_disarm(&ds18b20_timer);
 
-}
-
-void mqttDisconnectedCb(uint32_t *args)
-{
-	MQTT_Client* client = (MQTT_Client*)args;
-	INFO("MQTT: Disconnected\r\n");
-}
-
-void mqttPublishedCb(uint32_t *args)
-{
-	MQTT_Client* client = (MQTT_Client*)args;
-	INFO("MQTT: Published\r\n");
-}
-
-void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const char *data, uint32_t data_len)
-{
-	char *topicBuf = (char*)os_zalloc(topic_len+1),
-			*dataBuf = (char*)os_zalloc(data_len+1);
-
-	MQTT_Client* client = (MQTT_Client*)args;
-
-	os_memcpy(topicBuf, topic, topic_len);
-	topicBuf[topic_len] = 0;
-
-	os_memcpy(dataBuf, data, data_len);
-	dataBuf[data_len] = 0;
-
-	INFO("Receive topic: %s, data:%s", topicBuf, dataBuf);
-	os_free(topicBuf);
-	os_free(dataBuf);
-}
-
-void setup_mqtt(esp_init_cfg* esp_cfg){
-
-	MQTT_InitConnection(&mqttClient, esp_cfg->host, atoi(esp_cfg->port), 0);
-	MQTT_InitClient(&mqttClient, sysCfg.device_id, sysCfg.mqtt_user, sysCfg.mqtt_pass, sysCfg.mqtt_keepalive, 1);
-
-	MQTT_InitLWT(&mqttClient, "/lwt", "offline", 0, 0);
-	MQTT_OnConnected(&mqttClient, mqttConnectedCb);
-	MQTT_OnDisconnected(&mqttClient, mqttDisconnectedCb);
-	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
-	MQTT_OnData(&mqttClient, mqttDataCb);
-}
-
-void process_rx_input(char *input, int length);
-int sub_count = 0;
-char rxbuffer[256];
-int buf_index = 0;
-os_event_t uart_recv_queue[32];
-void uart_recv_task(os_event_t * event)
-{
-	switch(event->sig)
+	if (ndevices < 1)
 	{
-		case SIG_UART0_RX:
+		INFO("no devices found\n");
+		os_timer_setfn(&ds18b20_timer, (os_timer_func_t *)sleeper, (void *)0);
+		os_timer_arm(&ds18b20_timer, 1000, 0);
+		return;
+	}
+
+	// perform the conversion
+	reset();
+	select(devices[curdevice]);
+	write(DS1820_CONVERT_T, 1); // perform temperature conversion
+
+	// tell me when its been 750ms, please
+	os_timer_setfn(&ds18b20_timer, (os_timer_func_t *)ds18b20p2, (void *)0);
+	os_timer_arm(&ds18b20_timer, 750, 0);
+
+}
+
+// ds18b20 part 2
+// conversion should be done, get the result
+// report it
+// check for next device, call part 1 again
+// or sleep if done
+void ICACHE_FLASH_ATTR ds18b20p2(void *arg)
+{
+	int i;
+	int tries = 5;
+	uint8_t data[12];
+	os_timer_disarm(&ds18b20_timer);
+	while(tries > 0)
+	{
+#ifdef DSDEBUG
+		INFO("Scratchpad: ");
+#endif
+		reset();
+		select(devices[curdevice]);
+		write(DS1820_READ_SCRATCHPAD, 0); // read scratchpad
+
+		for(i = 0; i < 9; i++)
 		{
-			os_memcpy(&rxbuffer[buf_index], &event->par,1);
-			//os_printf("%c", rxbuffer[buf_index]);
-			rxbuffer[buf_index + 1] = '\0';
-			if(rxbuffer[buf_index] == '*'){
-				process_rx_input(rxbuffer, buf_index);			
-				buf_index = 0;
-			}
-			else {
-				if(buf_index + 1 < 254)
-					buf_index++;
-				else
-					buf_index = 0;
-			}
-			
-			break;
+			data[i] = read();
+#ifdef DSDEBUG
+			INFO("%02x ", data[i]);
+#endif
 		}
-		default:
-		break;
+#ifdef DSDEBUG
+		INFO("\n");
+		INFO("crc calc=%02x read=%02x\n",crc8(data,8),data[8]);
+#endif
+		if(crc8(data,8) == data[8]) break;
+		tries--;
+	}
+	uint8_t *addr = devices[curdevice];
+	int rr = data[1] << 8 | data[0];
+	if (rr & 0x8000) rr |= 0xffff0000; // sign extend
+	if (addr[0] == 0x10)
+	{
+		//DS18S20
+		rr = rr * 10000 / 2; // each bit is 1/2th of a degree C, * 10000 just keeps us as an integer
+	}
+	else
+	{
+		//DS18B20
+		rr = rr * 10000 / 16; // each bit is 1/16th of a degree C, * 10000 just keeps us as an integer
+	}
+#ifdef DSDEBUG
+	INFO("int reading=%d r2=%d.%04d hex=%02x%02x\n",rr,rr/10000,abs(rr)%10000,data[1],data[0]);
+#endif
+	char out[50];
+	os_sprintf(out,"%02x%02x%02x%02x%02x%02x%02x%02x:%d.%04d",
+					addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7],
+					rr/10000,abs(rr)%10000);
+
+	INFO("%s\n",out);
+
+	// setup for next device
+	os_timer_setfn(&ds18b20_timer, (os_timer_func_t *)ds18b20p1, (void *)0);
+	os_timer_arm(&ds18b20_timer, 100, 0);
+
+	curdevice++;
+	if (curdevice >= ndevices)
+	{
+		curdevice = 0;
+		// no more devices, go to sleep...
+		// ... but after a second (ensures the last UDP packet is sent before shutdown)
+		os_timer_disarm(&ds18b20_timer);
+		os_timer_setfn(&ds18b20_timer, (os_timer_func_t *)sleeper, (void *)0);
+		os_timer_arm(&ds18b20_timer, 1000, 0);
 	}
 }
-void process_rx_input(char *input, int length){
-    jsmn_parser p;
-    jsmntok_t tok[50];
-    const char* js;
-    int i = 0;    
-    int count;
-    keyvalue kv;
-    
-   // INFO(input);
-   // INFO("\r\n");
-    
-    js = input;
-    jsmn_init(&p);
-    count = jsmn_parse(&p, js, strlen(js), tok, 50);
-//    os_printf("Count: %d\r\n", count); 
-    if(count > 1){
-        keyvalue first;
-        for(i=0; i < count; i++){
-            unsigned int start =tok[i].start;
-            unsigned int end = tok[i].end;
-        
-            unsigned int size = 0;
-            if(end > 0)
-                size = end - start;
 
-            //os_printf("Start %d, end %d size %d\r\n", start ,end, size);
-        
-            if(start >= 0 && end >= 0 && size > 0){
-                if(!get_key_value(input, tok, 1, "subscribe", &first)){
-                    if(!strcmp(first.key, "subscribe")){
-                        if(!get_key_value(input, tok, i, "host", &kv))
-                            memcpy(sub.host, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "topic", &kv))
-                            memcpy(sub.topic, kv.value, strlen(kv.value));
-                    }
-                }
-                else 
-                if(!get_key_value(input, tok, 1, "publish", &first)){
-                    if(!strcmp(first.key, "publish")){
-                        if(!get_key_value(input, tok, i, "host", &kv))
-                            memcpy(pub.host, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "topic", &kv))
-                            memcpy(pub.topic, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "message", &kv))
-                            memcpy(pub.message, kv.value, strlen(kv.value));
-                    }
-                }
-                else
-                if(!get_key_value(input, tok, 1, "wifi", &first)){
-                    if(!strcmp(first.key, "wifi")){
-                        if(!get_key_value(input, tok, i, "bssid", &kv))
-                            memcpy(wifi.bssid, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "psk", &kv))
-                            memcpy(wifi.psk, kv.value, strlen(kv.value));
-                    }
-                }
-                else
-                if(!get_key_value(input, tok, 1, "init", &first)){
-                    if(!strcmp(first.key, "init")){
-                        if(!get_key_value(input, tok, i, "host", &kv))
-                            memcpy(esp_init.host, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "port", &kv))
-                            memcpy(esp_init.port, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "clientid", &kv))
-                            memcpy(esp_init.clientid, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "user", &kv))
-                            memcpy(esp_init.user, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "pass", &kv))
-                            memcpy(esp_init.password, kv.value, strlen(kv.value));
-                        if(!get_key_value(input, tok, i, "interval", &kv))
-                            memcpy(esp_init.interval, kv.value, strlen(kv.value));
-                    }
-                }
-            }
-        }
-    
-    }
-    
-    if(esp_init.host[0] != '\0' && st.mqtt != CONNECTED){
-        os_printf("Initialising %s, %s, %s, %s, %s, %s\n", esp_init.host, esp_init.port, esp_init.clientid, esp_init.user, esp_init.password, esp_init.interval);
-        setup_mqtt(&esp_init);
-	MQTT_Connect(&mqttClient);
-	os_printf("Inited\n");
-    }
-
-    if(sub.host[0] != '\0'){
-        os_printf("Subscribe to %s, %s\n", sub.host, sub.topic);
-	    MQTT_Subscribe(client, sub.topic, sub_count);
-        sub_count++;
-        //Ugly but it works for now
-        sub.host[0] = '\0';
-    }
-    
-    if(pub.host[0] != '\0'){
-        os_printf("Publish to %s, %s, %s\n", pub.host, pub.topic, pub.message);
-        MQTT_Publish(client, pub.topic, pub.message, strlen(pub.message), 0, 0);
-        //Ugly but it works for now
-        pub.host[0] = '\0';
-    }
-
-    if(wifi.bssid[0] != '\0' && st.wifi != CONNECTED){
-        os_printf("Wifi: %s, %s\n", wifi.bssid, wifi.psk);
-	    WIFI_Connect(wifi.bssid, wifi.psk, wifiConnectCb);
-    }
-
-}
-void user_init(void)
+// init!
+void ICACHE_FLASH_ATTR user_done(void)
 {
-    esp_init.host[0] = '\0';
-    esp_init.port[0] = '\0';
-    esp_init.clientid[0] = '\0';
-    esp_init.user[0] = '\0';
-    esp_init.password[0] = '\0';
-    esp_init.interval[0] = '\0';
 
-    sub.host[0] = '\0';
-    sub.topic[0] = '\0';
+	INFO("started\n");
+	INFO("press return to configure wifi.\n");
+	INFO("unless you've configured it once already.\n");
+	
+    INFO("ready\n");
+	struct ip_info ipconfig;
 
-    pub.host[0] = '\0';
-    pub.topic[0] = '\0';
-    pub.message[0] = '\0';
+    // init 18b20 driver
+	ds_init();
 
-    wifi.bssid[0] = '\0';
-    wifi.psk[0] = '\0';
+	ndevices = 0;
+	int r;
+	uint8_t addr[8];
 
-    st.wifi = DISCONNECTED;
-    st.mqtt = DISCONNECTED;
+	// find the 18b20s on the bus
+	while( (r = ds_search(addr)) )
+	{
+		if(crc8(addr, 7) != addr[7]) continue; // crc mismatch -- bad device
+		INFO("Found:%02x%02x%02x%02x%02x%02x%02x%02x\n",
+				addr[0], addr[1], addr[2], addr[3], addr[4], addr[5], addr[6], addr[7]);
+		if (addr[0] == 0x10 || addr[0] == 0x28)
+		{
+			memcpy(devices[ndevices],addr,8);
+			ndevices++;
+			if (ndevices >= MAX_DEVICES) break;
+		}
+	}
 
-    uart_init(BIT_RATE_115200, BIT_RATE_115200);
-	os_delay_us(1000000);
+	// start reading devices...
+	// ... i'm handing off with a timer, could have called directly
+	os_timer_disarm(&ds18b20_timer);
+	os_timer_setfn(&ds18b20_timer, (os_timer_func_t *)ds18b20p1, (void *)0);
+	os_timer_arm(&ds18b20_timer, 100, 0);
+}
+void user_init(void) {
+    uart_init(BIT_RATE_115200, BIT_RATE_115200); 
+    system_init_done_cb(user_done);
+    INFO("\r\nSystem started ...\r\n");
 
-	CFG_Load();
-
-	INFO("\r\nSystem started ...\r\n");
-	// install receive task
-	system_os_task(uart_recv_task, UART_TASK_PRIO, uart_recv_queue, 32);
 }
