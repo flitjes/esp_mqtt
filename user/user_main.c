@@ -58,13 +58,11 @@ void mqttConnectedCb(uint32_t *args)
 {
 	MQTT_Client* client = (MQTT_Client*)args;
 	INFO("MQTT: Connected\r\n");
-	MQTT_Subscribe(client, "/mqtt/topic/0", 0);
-	MQTT_Subscribe(client, "/mqtt/topic/1", 1);
-	MQTT_Subscribe(client, "/mqtt/topic/2", 2);
+	/*Pick a unique topic*/
+	MQTT_Subscribe(client, "/AI-lab/workshop/grp0/toggle", 0);
 
-	MQTT_Publish(client, "/mqtt/topic/0", "hello0", 6, 0, 0);
-	MQTT_Publish(client, "/mqtt/topic/1", "hello1", 6, 1, 0);
-	MQTT_Publish(client, "/mqtt/topic/2", "hello2", 6, 2, 0);
+	/*Pick a unique topic*/
+	MQTT_Publish(client, "/AI-lab/workshop/grp0/status", "MQTT initialised", 6, 0, 0);
 
 }
 
@@ -96,11 +94,11 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 	INFO("Receive topic: %s, data: %s \r\n", topicBuf, dataBuf);
 	if(toggle == 0){
 		os_printf("White\r\n");
-		WS2812OutBuffer(buffer1, sizeof(buffer1), 1);
+		
 		toggle = 1;
 	} else if(toggle == 1){
 		os_printf("Red\r\n");
-		WS2812OutBuffer(buffer2, sizeof(buffer2), 1);
+		
 		toggle = 0;
 	}
 	os_free(topicBuf);
@@ -111,16 +109,14 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 void user_done(void)
 {
 	CFG_Load();
+	/*Init Conneciton*/
+	/*Init Client*/
+	/*Init LWT*/
+	/*Register connection callback*/
+	/*Register disconnect callback*/
+	/*Register publish callback*/
+	/*Register subcribe callback*/
 
-	MQTT_InitConnection(&mqttClient, "192.168.178.41", 1883, 0);
-
-	MQTT_InitClient(&mqttClient, "client_id", "user", "pass", 120, 1);
-
-	MQTT_InitLWT(&mqttClient, "/lwt", "offline", 0, 0);
-	MQTT_OnConnected(&mqttClient, mqttConnectedCb);
-	MQTT_OnDisconnected(&mqttClient, mqttDisconnectedCb);
-	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
-	MQTT_OnData(&mqttClient, mqttDataCb);
 }
 
 void user_init(void) {
