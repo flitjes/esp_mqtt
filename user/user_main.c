@@ -40,9 +40,29 @@
 #include "ws2812.h"
 
 MQTT_Client mqttClient;
-#define LEDS 1
-char buffer1[LEDS*3] = { 0x00, 0x00, 0xFF }; 
-char buffer2[LEDS*3] = { 0xFF, 0x00, 0x00 };
+#define LEDS 8
+//GRB
+char buffer1[LEDS*3] = { 
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+			0xFF, 0xFF, 0xFF,
+		       }; 
+//GRB
+char buffer2[LEDS*3] = { 
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+			0x00, 0xFF, 0x00,
+		       };
 
 uint8_t toggle = 0;
 
@@ -62,7 +82,8 @@ void mqttConnectedCb(uint32_t *args)
 	MQTT_Subscribe(client, "/AI-lab/workshop/grp0/toggle", 0);
 
 	/*Pick a unique topic*/
-	MQTT_Publish(client, "/AI-lab/workshop/grp0/status", "MQTT initialised", 6, 0, 0);
+	char* publish= "MQTT initialised";
+	MQTT_Publish(client, "/AI-lab/workshop/grp0/status",publish , strlen(publish), 0, 0);
 
 }
 
@@ -109,6 +130,7 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 void user_done(void)
 {
 	CFG_Load();
+	/*Connect to wifi*/
 	/*Init Conneciton*/
 	/*Init Client*/
 	/*Init LWT*/
@@ -116,6 +138,7 @@ void user_done(void)
 	/*Register disconnect callback*/
 	/*Register publish callback*/
 	/*Register subcribe callback*/
+	
 
 }
 

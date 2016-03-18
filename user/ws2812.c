@@ -3,7 +3,7 @@
 #include "eagle_soc.h"
 #include "osapi.h"
 #include "gpio.h"
-#include "config.h"
+#include "config_leds.h"
 
 //#include "espmissingincludes.h"
 //I just used a scope to figure out the right time periods.
@@ -42,9 +42,9 @@ void __attribute__((optimize("O2"))) send_ws_1(uint8_t gpio){
   i = 6; while (i--) GPIO_REG_WRITE(GPIO_OUT_W1TC_ADDRESS, 1 << gpio);
 }
 
-#define IO_PIN 4
-#define IO_MUX PERIPHS_IO_MUX_GPIO4_U
-#define IO_FUNC FUNC_GPIO4
+#define IO_PIN 6
+#define IO_MUX PERIPHS_IO_MUX_GPIO6_U
+#define IO_FUNC FUNC_GPIO6
 
 
 void WS2812OutBuffer( uint8_t * buffer, uint16_t length, int dim)
