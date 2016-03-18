@@ -108,17 +108,12 @@ void mqttDataCb(uint32_t *args, const char* topic, uint32_t topic_len, const cha
 }
 
 
-void user_init(void)
+void user_done(void)
 {
-	uart_init(BIT_RATE_115200, BIT_RATE_115200);
-	os_delay_us(1000000);
-
 	CFG_Load();
 
-	//MQTT_InitConnection(&mqttClient, sysCfg.mqtt_host, sysCfg.mqtt_port, sysCfg.security);
 	MQTT_InitConnection(&mqttClient, "192.168.178.41", 1883, 0);
 
-	//MQTT_InitClient(&mqttClient, sysCfg.device_id, sysCfg.mqtt_user, sysCfg.mqtt_pass, sysCfg.mqtt_keepalive, 1);
 	MQTT_InitClient(&mqttClient, "client_id", "user", "pass", 120, 1);
 
 	MQTT_InitLWT(&mqttClient, "/lwt", "offline", 0, 0);
@@ -126,9 +121,11 @@ void user_init(void)
 	MQTT_OnDisconnected(&mqttClient, mqttDisconnectedCb);
 	MQTT_OnPublished(&mqttClient, mqttPublishedCb);
 	MQTT_OnData(&mqttClient, mqttDataCb);
-
-//	WIFI_Connect(sysCfg.sta_ssid, sysCfg.sta_pwd, wifiConnectCb);
-
-	INFO("\r\nSystem started ...\r\n");
 }
 
+void user_init(void) {
+    uart_init(BIT_RATE_115200, BIT_RATE_115200); 
+    system_init_done_cb(user_done);
+    INFO("\r\nSystem started ...\r\n");
+
+}
